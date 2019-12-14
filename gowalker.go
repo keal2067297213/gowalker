@@ -18,32 +18,34 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"runtime"
 	"strings"
 
-	"github.com/Unknwon/log"
 	"github.com/go-macaron/i18n"
 	"github.com/go-macaron/pongo2"
 	"github.com/go-macaron/session"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	log "gopkg.in/clog.v1"
 	"gopkg.in/macaron.v1"
 
-	"github.com/Unknwon/gowalker/modules/context"
-	"github.com/Unknwon/gowalker/modules/setting"
-	"github.com/Unknwon/gowalker/routers"
-	"github.com/Unknwon/gowalker/routers/apiv1"
+	"github.com/unknwon/gowalker/internal/context"
+	_ "github.com/unknwon/gowalker/internal/prometheus"
+	"github.com/unknwon/gowalker/internal/route"
+	"github.com/unknwon/gowalker/internal/route/apiv1"
+	"github.com/unknwon/gowalker/internal/setting"
 )
 
-const APP_VER = "1.9.7.0527"
+const Version = "2.5.3.1020"
 
 func init() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
-	setting.AppVer = APP_VER
+	setting.AppVer = Version
 }
 
 // newMacaron initializes Macaron instance.
 func newMacaron() *macaron.Macaron {
 	m := macaron.New()
-	m.Use(macaron.Logger())
+	if !setting.DisableRouterLog {
+		m.Use(macaron.Logger())
+	}
 	m.Use(macaron.Recovery())
 	m.Use(macaron.Static("public",
 		macaron.StaticOptions{
@@ -65,13 +67,13 @@ func newMacaron() *macaron.Macaron {
 }
 
 func main() {
-	log.Info("Go Walker %s", APP_VER)
+	log.Info("Go Walker %s", Version)
 	log.Info("Run Mode: %s", strings.Title(macaron.Env))
 
 	m := newMacaron()
-	m.Get("/", routers.Home)
-	m.Get("/search", routers.Search)
-	m.Get("/search/json", routers.SearchJSON)
+	m.Get("/", route.Home)
+	m.Get("/search", route.Search)
+	m.Get("/search/json", route.SearchJSON)
 
 	m.Group("/api", func() {
 		m.Group("/v1", func() {
@@ -79,15 +81,17 @@ func main() {
 		})
 	})
 
+	m.Get("/-/metrics", promhttp.Handler())
+
 	m.Get("/robots.txt", func() string {
 		return `User-agent: *
 Disallow: /search`
 	})
-	m.Get("/*", routers.Docs)
+	m.Get("/*", route.Docs)
 
 	listenAddr := fmt.Sprintf("0.0.0.0:%d", setting.HTTPPort)
 	log.Info("Listen: http://%s", listenAddr)
 	if err := http.ListenAndServe(listenAddr, m); err != nil {
-		log.FatalD(4, "Fail to start server: %v", err)
+		log.Fatal(2, "Failed to start server: %v", err)
 	}
 }
